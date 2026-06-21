@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const Company = require('../models/Company');
+const Company = require('../models/company');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
