@@ -1,85 +1,136 @@
-const Job = require('../models/job');
+const Job = require('../models/Job');
+const Company = require('../models/Company');
+const { asyncHandler, HttpError, escapeRegex } = require('../utils/asyncHandler');
 
-// GET /api/jobs
-const getJobs = async (req, res) => {
-  try {
-    const { category, location, search } = req.query;
-    let filter = { isActive: true };
+const EDITABLE = [
+  'title', 'description', 'category', 'location', 'company', 'companyName', 'logo', 'salary',
+  'jobType', 'requirements', 'benefits', 'vacancies', 'contactPhone', 'isActive',
+];
 
-    if (category) filter.category = category;
-    if (location) filter.location = new RegExp(location, 'i');
-    if (search)   filter.title    = new RegExp(search, 'i');
+const toList = (v) =>
+  Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean) : String(v || '').split(/\n|,/).map((s) => s.trim()).filter(Boolean);
 
-    const jobs = await Job.find(filter).populate('company', 'name logo location');
-    res.json(jobs);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+// Copy allowed fields from the request onto a job document
+const applyBody = async (job, body) => {
+  EDITABLE.forEach((f) => {
+    if (body[f] === undefined) return;
+    job[f] = ['requirements', 'benefits'].includes(f) ? toList(body[f]) : body[f];
+  });
+  if (body.company === '') job.company = undefined;
+
+  // If a company record is linked, keep the denormalised name/logo in sync
+  if (job.company) {
+    const company = await Company.findById(job.company);
+    if (!company) throw new HttpError(400, 'Selected company does not exist');
+    job.companyName = company.name;
+    if (!body.logo) job.logo = company.logo;
   }
 };
+
+const buildFilter = (q, { includeInactive = false } = {}) => {
+  const filter = includeInactive ? {} : { isActive: true };
+  const keyword = q.keyword || q.search || q.q;
+  if (keyword) {
+    const rx = new RegExp(escapeRegex(keyword), 'i');
+    filter.$or = [{ title: rx }, { category: rx }, { companyName: rx }, { description: rx }];
+  }
+  if (q.location) filter.location = new RegExp(escapeRegex(q.location), 'i');
+  if (q.category) filter.category = new RegExp(`^${escapeRegex(q.category)}$`, 'i');
+  if (q.jobType) filter.jobType = q.jobType;
+  if (q.company) filter.company = q.company;
+  if (q.minSalary) filter.salaryMin = { $gte: Number(q.minSalary) || 0 };
+  if (q.status === 'active') filter.isActive = true;
+  if (q.status === 'closed') filter.isActive = false;
+  return filter;
+};
+
+const SORTS = {
+  newest: { createdAt: -1 },
+  oldest: { createdAt: 1 },
+  salary: { salaryMin: -1, createdAt: -1 },
+};
+
+// GET /api/jobs?keyword=&location=&category=&jobType=&minSalary=&sort=&page=&limit=
+const getAllJobs = asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 12));
+  const filter = buildFilter(req.query);
+
+  const [jobs, total] = await Promise.all([
+    Job.find(filter)
+      .sort(SORTS[req.query.sort] || SORTS.newest)
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .select('-__v'),
+    Job.countDocuments(filter),
+  ]);
+
+  res.json({ jobs, total, page, pages: Math.ceil(total / limit) || 1 });
+});
+
+// GET /api/jobs/meta — counts used for category tiles & filter dropdowns
+const getJobMeta = asyncHandler(async (req, res) => {
+  const [categories, locations, total, companies] = await Promise.all([
+    Job.aggregate([{ $match: { isActive: true } }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
+    Job.aggregate([{ $match: { isActive: true } }, { $group: { _id: '$location', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
+    Job.countDocuments({ isActive: true }),
+    Company.countDocuments(),
+  ]);
+  res.json({
+    total,
+    companies,
+    categories: categories.map((c) => ({ name: c._id, count: c.count })),
+    locations: locations.map((l) => ({ name: l._id, count: l.count })),
+    jobTypes: Job.JOB_TYPES,
+  });
+});
 
 // GET /api/jobs/:id
-const getJobById = async (req, res) => {
-  try {
-    const job = await Job.findById(req.params.id).populate('company');
-    if (!job) return res.status(404).json({ message: 'Job not found' });
-    res.json(job);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+const getJobById = asyncHandler(async (req, res) => {
+  const job = await Job.findById(req.params.id).populate('company');
+  if (!job || (!job.isActive && req.user?.role !== 'admin')) throw new HttpError(404, 'This job is no longer available');
 
-// POST /api/jobs  (admin only)
-const createJob = async (req, res) => {
-  try {
-    const job = await Job.create({ ...req.body, postedBy: req.user._id });
-    res.status(201).json(job);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+  // A few similar openings for the details page
+  const similar = await Job.find({ _id: { $ne: job._id }, isActive: true, category: job.category })
+    .sort({ createdAt: -1 })
+    .limit(3)
+    .select('title companyName logo location salary jobType createdAt');
 
-// POST /api/jobs/:id/apply  (protected)
-const applyJob = async (req, res) => {
-  try {
-    const job = await Job.findById(req.params.id);
-    if (!job) return res.status(404).json({ message: 'Job not found' });
+  res.json({ ...job.toObject(), similar });
+});
 
-    if (job.applicants.includes(req.user._id)) {
-      return res.status(400).json({ message: 'Already applied' });
-    }
-    job.applicants.push(req.user._id);
-    await job.save();
-    res.json({ message: 'Applied successfully' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+// GET /api/jobs/admin/all — admin list including closed jobs
+const getAdminJobs = asyncHandler(async (req, res) => {
+  const jobs = await Job.find(buildFilter(req.query, { includeInactive: true })).sort({ createdAt: -1 }).select('-__v');
+  res.json(jobs);
+});
 
-// POST /api/jobs/:id/save  (protected)
-const saveJob = async (req, res) => {
-  try {
-    const user = req.user;
-    const jobId = req.params.id;
+// POST /api/jobs
+const createJob = asyncHandler(async (req, res) => {
+  const job = new Job({ postedBy: req.user._id });
+  await applyBody(job, req.body);
+  await job.save();
+  res.status(201).json(job);
+});
 
-    if (user.savedJobs.includes(jobId)) {
-      return res.status(400).json({ message: 'Job already saved' });
-    }
-    user.savedJobs.push(jobId);
-    await user.save();
-    res.json({ message: 'Job saved' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+// PUT /api/jobs/:id
+const updateJob = asyncHandler(async (req, res) => {
+  const job = await Job.findById(req.params.id);
+  if (!job) throw new HttpError(404, 'Job not found');
+  await applyBody(job, req.body);
+  await job.save();
+  res.json(job);
+});
 
-// DELETE /api/jobs/:id  (admin only)
-const deleteJob = async (req, res) => {
-  try {
-    await Job.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Job removed' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+// DELETE /api/jobs/:id — also removes its applications and saves
+const deleteJob = asyncHandler(async (req, res) => {
+  const job = await Job.findByIdAndDelete(req.params.id);
+  if (!job) throw new HttpError(404, 'Job not found');
+  await Promise.all([
+    require('../models/Application').deleteMany({ job: job._id }),
+    require('../models/SavedJob').deleteMany({ job: job._id }),
+  ]);
+  res.json({ message: 'Job deleted' });
+});
 
-module.exports = { getJobs, getJobById, createJob, applyJob, saveJob, deleteJob };
+module.exports = { getAllJobs, getJobMeta, getJobById, getAdminJobs, createJob, updateJob, deleteJob };

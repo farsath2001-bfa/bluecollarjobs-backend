@@ -1,71 +1,69 @@
-const User = require('../models/user');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const { asyncHandler, HttpError } = require('../utils/asyncHandler');
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-};
+const generateToken = (id) =>
+  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE || '7d' });
 
-// POST /api/auth/register
-const register = async (req, res) => {
-  const { name, email, password, role } = req.body;
-  try {
-    const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ message: 'User already exists' });
+// Shape returned to the frontend after login/register/profile update
+const authPayload = (user) => ({ ...user.toJSON(), token: generateToken(user._id) });
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+// Fields a candidate can edit on their own profile
+const PROFILE_FIELDS = ['name', 'phone', 'location', 'nationality', 'skills', 'experienceYears', 'languages', 'bio', 'resume', 'profilePhoto'];
 
-    const user = await User.create({ name, email, password: hashedPassword, role });
-    res.status(201).json({ 
-      _id: user._id, 
-      name: user.name, 
-      email: user.email, 
-      role: user.role, 
-      token: generateToken(user._id) 
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+const toList = (v) =>
+  Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean) : String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+// POST /api/auth/register — public sign-up is always a candidate account
+const registerUser = asyncHandler(async (req, res) => {
+  const { name, email, password, phone } = req.body;
+  if (!name || !email || !password) throw new HttpError(400, 'Name, email and password are required');
+
+  const exists = await User.findOne({ email: String(email).toLowerCase().trim() });
+  if (exists) throw new HttpError(400, 'That email is already registered');
+
+  const user = await User.create({ name, email, password, phone, role: 'candidate' });
+  res.status(201).json(authPayload(user));
+});
 
 // POST /api/auth/login
-const login = async (req, res) => {
+const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
+  if (!email || !password) throw new HttpError(400, 'Enter your email and password');
 
-  console.log("1. Email received:", email);
-  console.log("2. Password received:", password);
+  const user = await User.findOne({ email: String(email).toLowerCase().trim() }).select('+password');
+  if (!user || !(await user.matchPassword(password))) throw new HttpError(401, 'Email or password is incorrect');
 
-  try {
-    const user = await User.findOne({ email });
-    console.log("3. User found:", user ? "YES" : "NO");
+  res.json(authPayload(user));
+});
 
-    if (user) {
-      const isMatch = await bcrypt.compare(password, user.password);
-      console.log("4. Password match:", isMatch);
-
-      if (isMatch) {
-        res.json({ 
-          _id: user._id, 
-          name: user.name, 
-          email: user.email, 
-          role: user.role, 
-          token: generateToken(user._id) 
-        });
-      } else {
-        res.status(401).json({ message: 'Invalid email or password' });
-      }
-    } else {
-      res.status(401).json({ message: 'Invalid email or password' });
-    }
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-
-// GET /api/auth/profile (protected)
-const getProfile = async (req, res) => {
+// GET /api/auth/profile
+const getProfile = asyncHandler(async (req, res) => {
   res.json(req.user);
-};
+});
 
-module.exports = { register, login, getProfile };
+// PUT /api/auth/profile
+const updateProfile = asyncHandler(async (req, res) => {
+  const user = req.user;
+  PROFILE_FIELDS.forEach((field) => {
+    if (req.body[field] === undefined) return;
+    user[field] = ['skills', 'languages'].includes(field) ? toList(req.body[field]) : req.body[field];
+  });
+  await user.save();
+  res.json(authPayload(user));
+});
+
+// PUT /api/auth/password
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) throw new HttpError(400, 'Enter your current and new password');
+
+  const user = await User.findById(req.user._id).select('+password');
+  if (!(await user.matchPassword(currentPassword))) throw new HttpError(400, 'Current password is incorrect');
+
+  user.password = newPassword;
+  await user.save();
+  res.json({ message: 'Password updated' });
+});
+
+module.exports = { registerUser, loginUser, getProfile, updateProfile, changePassword };

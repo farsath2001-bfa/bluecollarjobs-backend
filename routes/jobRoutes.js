@@ -1,13 +1,21 @@
 const express = require('express');
-const router = express.Router();
-const { getJobs, getJobById, createJob, applyJob, saveJob, deleteJob } = require('../controllers/jobController');
-const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { getAllJobs, getJobMeta, getJobById, getAdminJobs, createJob, updateJob, deleteJob } = require('../controllers/jobController');
+const { applyToJob } = require('../controllers/applicationController');
+const { saveJob } = require('../controllers/savedJobController');
+const { protect, optionalAuth, adminOnly } = require('../middleware/authMiddleware');
 
-router.get('/',              getJobs);
-router.get('/:id',           getJobById);
-router.post('/',             protect, adminOnly, createJob);
-router.post('/:id/apply',    protect, applyJob);
-router.post('/:id/save',     protect, saveJob);
-router.delete('/:id',        protect, adminOnly, deleteJob);
+const router = express.Router();
+
+router.get('/', getAllJobs);                                // GET    /api/jobs
+router.get('/meta', getJobMeta);                            // GET    /api/jobs/meta
+router.get('/admin/all', protect, adminOnly, getAdminJobs); // GET    /api/jobs/admin/all
+router.get('/:id', optionalAuth, getJobById);               // GET    /api/jobs/:id
+router.post('/', protect, adminOnly, createJob);            // POST   /api/jobs
+router.put('/:id', protect, adminOnly, updateJob);          // PUT    /api/jobs/:id
+router.delete('/:id', protect, adminOnly, deleteJob);       // DELETE /api/jobs/:id
+
+// Short aliases kept for older frontend builds
+router.post('/:id/apply', protect, applyToJob);
+router.post('/:id/save', protect, saveJob);
 
 module.exports = router;

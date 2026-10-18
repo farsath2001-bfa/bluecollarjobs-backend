@@ -1,31 +1,43 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/user');
+const User = require('../models/User');
 
+const readToken = (req) => {
+  const header = req.headers.authorization || '';
+  return header.startsWith('Bearer ') ? header.slice(7) : null;
+};
+
+// Requires a valid JWT. Attaches req.user.
 const protect = async (req, res, next) => {
-  let token;
+  const token = readToken(req);
+  if (!token) return res.status(401).json({ message: 'Please log in to continue' });
 
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    try {
-      token = req.headers.authorization.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id).select('-password');
-      next();
-    } catch (error) {
-      return res.status(401).json({ message: 'Not authorized, token failed' });
-    }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(401).json({ message: 'Account no longer exists' });
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ message: 'Session expired, please log in again' });
   }
+};
 
-  if (!token) {
-    return res.status(401).json({ message: 'Not authorized, no token' });
+// Attaches req.user when a valid token is present, but never blocks.
+const optionalAuth = async (req, res, next) => {
+  const token = readToken(req);
+  if (!token) return next();
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = await User.findById(decoded.id);
+  } catch {
+    /* ignore bad tokens on public routes */
   }
+  next();
 };
 
 const adminOnly = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
-    next();
-  } else {
-    res.status(403).json({ message: 'Admin access only' });
-  }
+  if (req.user?.role === 'admin') return next();
+  return res.status(403).json({ message: 'Admins only' });
 };
 
-module.exports = { protect, adminOnly };
+module.exports = { protect, optionalAuth, adminOnly };
