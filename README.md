@@ -28,7 +28,7 @@ Public sign-up always creates a `candidate`. Admins are created with `npm run cr
 | `MONGO_URI` | `mongodb+srv://USER:PASS@cluster0.xxxxx.mongodb.net/bluecollarjobs?retryWrites=true&w=majority` |
 | `JWT_SECRET` | long random string |
 | `JWT_EXPIRE` | `7d` |
-| `CLIENT_URLS` | `http://localhost:5173,https://bluecollarjobs-frontend-1zzj.vercel.app` |
+| `CLIENT_URLS` | `http://localhost:5173,https://bluecollarjobs-frontend.vercel.app` |
 | `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | first admin account |
 
 On Render, add the same variables under **Environment**.

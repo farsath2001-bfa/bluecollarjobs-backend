@@ -12,7 +12,7 @@ const app = express();
 app.set('trust proxy', 1); // Render / Vercel sit behind a proxy (needed for rate limiting)
 
 // ---- CORS: allow the frontends listed in CLIENT_URLS ----
-const allowedOrigins = (process.env.CLIENT_URLS || 'http://localhost:5173,https://bluecollarjobs-frontend-1zzj.vercel.app')
+const allowedOrigins = (process.env.CLIENT_URLS || 'http://localhost:5173,https://bluecollarjobs-frontend.vercel.app')
   .split(',')
   .map((s) => s.trim().replace(/\/$/, ''))
   .filter(Boolean);
