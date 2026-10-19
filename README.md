@@ -59,25 +59,29 @@ On Render, add the same variables under **Environment**.
 | Method | Path | Access |
 | --- | --- | --- |
 | POST | `/api/auth/register`, `/api/auth/login` | public (rate limited) |
+| POST | `/api/auth/register-employer` | public — creates an employer + company waiting for approval |
+| GET/PUT | `/api/employer/company` | employer — own company profile and stats |
+| PUT | `/api/companies/:id/status` `{ status: approved\|suspended\|pending, note }` | admin — suspending closes the company's jobs |
 | GET/PUT | `/api/auth/profile` | logged in |
 | PUT | `/api/auth/password` | logged in |
 | POST | `/api/auth/forgot-password`, `/api/auth/reset-password/:token` | public (rate limited) — reset links last 30 minutes |
 | GET | `/api/uploads/status` | public — `{ enabled }` |
 | POST | `/api/uploads/cv` (form field `file`: PDF/DOC/DOCX/JPG/PNG ≤ 5 MB) | logged in |
-| POST | `/api/uploads/logo` (form field `file`: image ≤ 2 MB) | admin |
+| POST | `/api/uploads/logo` (form field `file`: image ≤ 2 MB) | admin or employer |
+| GET | `/api/uploads/link?url=` | logged in — 10-minute signed link to open a CV (admin: any; employer: applicants to their jobs; candidate: own) |
 | GET | `/sitemap.xml` | public — open jobs and companies (the frontend proxies its own `/sitemap.xml` here) |
 | GET | `/api/jobs?keyword=&location=&category=&jobType=&minSalary=&sort=newest\|salary&page=&limit=` | public → `{ jobs, total, page, pages }` |
 | GET | `/api/jobs/meta` | public — category/location counts |
 | GET | `/api/jobs/:id` | public — includes `similar` jobs |
-| GET | `/api/jobs/admin/all` | admin — includes closed jobs |
-| POST/PUT/DELETE | `/api/jobs`, `/api/jobs/:id` | admin |
+| GET | `/api/jobs/admin/all` | admin (all jobs) or employer (own jobs), incl. closed |
+| POST/PUT/DELETE | `/api/jobs`, `/api/jobs/:id` | admin, or an approved employer for their own jobs |
 | GET | `/api/companies`, `/api/companies/:id` | public (`/api/company` also works) |
 | POST/PUT/DELETE | `/api/companies`, `/api/companies/:id` | admin |
 | POST | `/api/applications/:jobId` | candidate |
 | GET | `/api/applications/my` | candidate |
 | DELETE | `/api/applications/:id` | candidate (withdraw) |
-| GET | `/api/applications?status=&job=` | admin |
-| PUT | `/api/applications/:id/status` | admin |
+| GET | `/api/applications?status=&job=` | admin (all) or employer (applications to their jobs) |
+| PUT | `/api/applications/:id/status` | admin or the employer who owns the job |
 | GET/POST/DELETE | `/api/saved`, `/api/saved/ids`, `/api/saved/:jobId` | logged in |
 | POST | `/api/contact` | public (rate limited) |
 | GET | `/api/admin/stats` | admin |

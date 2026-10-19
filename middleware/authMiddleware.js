@@ -40,4 +40,26 @@ const adminOnly = (req, res, next) => {
   return res.status(403).json({ message: 'Admins only' });
 };
 
-module.exports = { protect, optionalAuth, adminOnly };
+const Company = require('../models/Company');
+
+// Admins, or employers (whose company is attached as req.company). Controllers scope employers to their own data.
+const adminOrEmployer = async (req, res, next) => {
+  if (req.user?.role === 'admin') return next();
+  if (req.user?.role !== 'employer') return res.status(403).json({ message: 'Employers only' });
+  req.company = req.user.company ? await Company.findById(req.user.company) : null;
+  if (!req.company) return res.status(403).json({ message: 'Your company profile is missing. Contact us.' });
+  return next();
+};
+
+// Employers whose company the admin has approved (admins always pass)
+const approvedEmployer = (req, res, next) => {
+  if (req.user?.role === 'admin') return next();
+  if (req.company?.status === 'approved') return next();
+  const message =
+    req.company?.status === 'suspended'
+      ? 'Your employer account is suspended. Contact us for help.'
+      : 'Your employer account is waiting for approval. You can post jobs once it is approved.';
+  return res.status(403).json({ message });
+};
+
+module.exports = { protect, optionalAuth, adminOnly, adminOrEmployer, approvedEmployer };

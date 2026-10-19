@@ -2,6 +2,7 @@ const multer = require('multer');
 const path = require('path');
 const { cloudinary, isConfigured, uploadBuffer } = require('../config/cloudinary');
 const Application = require('../models/Application');
+const Job = require('../models/Job');
 const { asyncHandler, HttpError } = require('../utils/asyncHandler');
 
 const MB = 1024 * 1024;
@@ -98,7 +99,12 @@ const getFileLink = asyncHandler(async (req, res) => {
   const parsed = parseCloudinaryUrl(url);
   if (!parsed || !isConfigured()) return res.json({ url });
 
-  if (req.user.role !== 'admin') {
+  if (req.user.role === 'employer') {
+    // CVs sent to this employer's jobs
+    const jobIds = req.user.company ? await Job.find({ company: req.user.company }).distinct('_id') : [];
+    const apps = await Application.find({ job: { $in: jobIds } }).select('resume applicant').populate('applicant', 'resume').lean();
+    if (!apps.some((a) => a.resume === url || a.applicant?.resume === url)) throw new HttpError(403, "You can't open this file");
+  } else if (req.user.role !== 'admin') {
     const own = req.user.resume === url || (await Application.exists({ applicant: req.user._id, resume: url }));
     if (!own) throw new HttpError(403, "You can't open this file");
   }

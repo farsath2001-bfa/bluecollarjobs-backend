@@ -143,6 +143,65 @@ const templates = {
     ),
   }),
 
+  applicationReceivedEmployer: ({ applicant, job, application }) => ({
+    subject: `New applicant for ${job.title}: ${applicant.name}`,
+    html: layout(
+      'You have a new applicant',
+      p(`<strong>${escapeHtml(applicant.name)}</strong> applied for <strong>${escapeHtml(job.title)}</strong>.`) +
+        p(`Phone: <strong>${escapeHtml(application.phone)}</strong><br/>Can start: ${escapeHtml(application.availableFrom || 'Not given')}<br/>UAE visa: ${application.hasUaeVisa ? 'Yes' : 'No / not given'}`) +
+        (application.coverLetter ? p(`Message: ${escapeHtml(application.coverLetter)}`) : '') +
+        p('Open your employer dashboard to see the full profile and CV, call or WhatsApp the applicant, and update their status.'),
+      { label: 'See applicants', url: `${SITE()}/employer/applicants` }
+    ),
+  }),
+
+  employerSignup: ({ user, company }) => ({
+    subject: `New employer waiting for approval: ${company.name}`,
+    html: layout(
+      'New employer sign-up',
+      p(`<strong>${escapeHtml(company.name)}</strong> signed up as an employer and is waiting for your approval.`) +
+        p(`Contact: ${escapeHtml(user.name)}<br/>Phone: <strong>${escapeHtml(user.phone || '')}</strong><br/>Email: ${escapeHtml(user.email)}` +
+          `${company.industry ? `<br/>Industry: ${escapeHtml(company.industry)}` : ''}${company.location ? `<br/>Emirate: ${escapeHtml(company.location)}` : ''}` +
+          `${company.website ? `<br/>Website: ${escapeHtml(company.website)}` : ''}`) +
+        p('Call them to confirm the company is real, then approve it in the admin panel.'),
+      { label: 'Review employers', url: `${SITE()}/admin/companies?status=pending` }
+    ),
+  }),
+
+  employerWelcome: ({ name, company }) => ({
+    subject: 'Your Jobz Dxb employer account',
+    html: layout(
+      `Thanks, ${name.split(' ')[0]}`,
+      p(`We've received the employer account for <strong>${escapeHtml(company.name)}</strong>.`) +
+        p('Our team checks every new employer to keep the site safe for job seekers. We may call you to confirm a few details. You can post jobs as soon as your account is approved — usually within one working day.') +
+        p('In the meantime you can complete your company profile and upload your logo.'),
+      { label: 'Open employer dashboard', url: `${SITE()}/employer` }
+    ),
+  }),
+
+  employerApproved: ({ name, company }) => ({
+    subject: `${company.name} is approved — you can post jobs now`,
+    html: layout(
+      'Your employer account is approved',
+      p(`Hi ${escapeHtml(name)},`) +
+        p(`<strong>${escapeHtml(company.name)}</strong> is now approved on Jobz Dxb. Jobs you post go live straight away, and you'll get an email for every new applicant.`) +
+        p('Tip: jobs with the salary, accommodation and transport details get the most applicants.'),
+      { label: 'Post a job', url: `${SITE()}/employer/jobs?new=1` }
+    ),
+  }),
+
+  employerSuspended: ({ name, company, note }) => ({
+    subject: `${company.name}: employer account suspended`,
+    html: layout(
+      'Your employer account is suspended',
+      p(`Hi ${escapeHtml(name)},`) +
+        p(`The employer account for <strong>${escapeHtml(company.name)}</strong> has been suspended and its jobs are hidden from the site.`) +
+        (note ? p(`Reason: ${escapeHtml(note)}`) : '') +
+        p('If you think this is a mistake, reply to this email or contact us through the website.'),
+      { label: 'Contact us', url: `${SITE()}/contact` }
+    ),
+  }),
+
   welcome: ({ name }) => ({
     subject: 'Welcome to Jobz Dxb',
     html: layout(

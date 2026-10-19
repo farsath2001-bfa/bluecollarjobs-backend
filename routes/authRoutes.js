@@ -1,6 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { registerUser, loginUser, getProfile, updateProfile, changePassword, forgotPassword, resetPassword } = require('../controllers/authController');
+const { registerEmployer } = require('../controllers/employerController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const authLimiter = rateLimit({
 });
 
 router.post('/register', authLimiter, registerUser);
+router.post('/register-employer', authLimiter, registerEmployer);
 router.post('/login', authLimiter, loginUser);
 router.post('/forgot-password', authLimiter, forgotPassword);
 router.post('/reset-password/:token', authLimiter, resetPassword);

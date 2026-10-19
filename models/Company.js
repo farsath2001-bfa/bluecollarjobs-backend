@@ -13,6 +13,12 @@ const companySchema = new mongoose.Schema(
     email: { type: String, default: '' },
     isVerified: { type: Boolean, default: false },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
+    // Employer accounts: the user who manages this company, and whether the admin has approved it.
+    // Companies added by the admin have no owner and are approved.
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    status: { type: String, enum: ['pending', 'approved', 'suspended'], default: 'approved' },
+    statusNote: { type: String, default: '' }, // reason shown to the employer when suspended
   },
   { timestamps: true }
 );

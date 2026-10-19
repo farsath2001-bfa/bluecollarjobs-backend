@@ -18,14 +18,17 @@ const userSchema = new mongoose.Schema(
       minlength: [6, 'Password must be at least 6 characters'],
       select: false,
     },
-    // Older accounts were saved as "jobseeker"; read and write them as "candidate"
+    // candidate = job seeker, employer = company account, admin = site owner.
+    // Older accounts were saved as "jobseeker"; read and write them as "candidate".
     role: {
       type: String,
-      enum: ['candidate', 'admin'],
+      enum: ['candidate', 'employer', 'admin'],
       default: 'candidate',
-      set: (v) => (v === 'admin' ? 'admin' : 'candidate'),
-      get: (v) => (v === 'admin' ? 'admin' : 'candidate'),
+      set: (v) => (['admin', 'employer'].includes(v) ? v : 'candidate'),
+      get: (v) => (['admin', 'employer'].includes(v) ? v : 'candidate'),
     },
+    // Employers: the company this account manages
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
 
     // Candidate profile — what employers see on an application
     phone: { type: String, trim: true, default: '' },
@@ -48,7 +51,7 @@ const userSchema = new mongoose.Schema(
 
 // Older accounts may still say "jobseeker" in the database; fix them on the next save
 userSchema.pre('validate', function normalizeRole() {
-  if (this.role !== 'admin') this.role = 'candidate';
+  if (!['admin', 'employer'].includes(this.role)) this.role = 'candidate';
 });
 
 userSchema.pre('save', async function hashPassword() {

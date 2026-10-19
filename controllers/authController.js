@@ -108,4 +108,4 @@ const resetPassword = asyncHandler(async (req, res) => {
   res.json(authPayload(user));
 });
 
-module.exports = { registerUser, loginUser, getProfile, updateProfile, changePassword, forgotPassword, resetPassword };
+module.exports = { registerUser, loginUser, getProfile, updateProfile, changePassword, forgotPassword, resetPassword, authPayload };

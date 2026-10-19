@@ -80,7 +80,7 @@ const getJobMeta = asyncHandler(async (req, res) => {
     Job.aggregate([{ $match: Job.openFilter() }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
     Job.aggregate([{ $match: Job.openFilter() }, { $group: { _id: '$location', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
     Job.countDocuments(Job.openFilter()),
-    Company.countDocuments(),
+    Company.countDocuments({ status: { $nin: ['pending', 'suspended'] } }),
   ]);
   res.json({
     total,
@@ -91,10 +91,22 @@ const getJobMeta = asyncHandler(async (req, res) => {
   });
 });
 
+// Does this logged-in employer own the job? (job.company may be populated or an id)
+const ownsJob = (user, job) =>
+  user?.role === 'employer' && user.company && String(job.company?._id || job.company) === String(user.company);
+
+// Employers can only touch their own company's jobs
+const assertCanEdit = (req, job) => {
+  if (req.user.role === 'admin') return;
+  if (!ownsJob(req.user, job)) throw new HttpError(404, 'Job not found');
+};
+
 // GET /api/jobs/:id
 const getJobById = asyncHandler(async (req, res) => {
   const job = await Job.findById(req.params.id).populate('company');
-  if (!job || (!job.isActive && req.user?.role !== 'admin')) throw new HttpError(404, 'This job is no longer available');
+  if (!job || (!job.isActive && req.user?.role !== 'admin' && !ownsJob(req.user, job))) {
+    throw new HttpError(404, 'This job is no longer available');
+  }
 
   // A few similar openings for the details page
   const similar = await Job.find({ _id: { $ne: job._id }, ...Job.openFilter(), category: job.category })
@@ -105,16 +117,25 @@ const getJobById = asyncHandler(async (req, res) => {
   res.json({ ...job.toObject(), similar });
 });
 
-// GET /api/jobs/admin/all — admin list including closed jobs
+// GET /api/jobs/admin/all — all jobs incl. closed (admin), or the employer's own jobs
 const getAdminJobs = asyncHandler(async (req, res) => {
-  const jobs = await Job.find(buildFilter(req.query, { includeInactive: true })).sort({ createdAt: -1 }).select('-__v');
+  const filter = buildFilter(req.query, { includeInactive: true });
+  if (req.user.role === 'employer') filter.company = req.company._id;
+  const jobs = await Job.find(filter).sort({ createdAt: -1 }).select('-__v');
   res.json(jobs);
 });
+
+// Employers always post under their own company
+const scopeBody = (req) => {
+  if (req.user.role !== 'employer') return req.body;
+  const { company, companyName, ...rest } = req.body; // eslint-disable-line no-unused-vars
+  return { ...rest, company: req.company._id };
+};
 
 // POST /api/jobs
 const createJob = asyncHandler(async (req, res) => {
   const job = new Job({ postedBy: req.user._id });
-  await applyBody(job, req.body);
+  await applyBody(job, scopeBody(req));
   await job.save();
   res.status(201).json(job);
 });
@@ -123,13 +144,17 @@ const createJob = asyncHandler(async (req, res) => {
 const updateJob = asyncHandler(async (req, res) => {
   const job = await Job.findById(req.params.id);
   if (!job) throw new HttpError(404, 'Job not found');
-  await applyBody(job, req.body);
+  assertCanEdit(req, job);
+  await applyBody(job, scopeBody(req));
   await job.save();
   res.json(job);
 });
 
 // DELETE /api/jobs/:id — also removes its applications and saves
 const deleteJob = asyncHandler(async (req, res) => {
+  const existing = await Job.findById(req.params.id);
+  if (!existing) throw new HttpError(404, 'Job not found');
+  assertCanEdit(req, existing);
   const job = await Job.findByIdAndDelete(req.params.id);
   if (!job) throw new HttpError(404, 'Job not found');
   await Promise.all([

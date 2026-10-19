@@ -48,6 +48,7 @@ app.use('/api/saved', require('./routes/savedJobRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/contact', require('./routes/contactRoutes'));
 app.use('/api/uploads', require('./routes/uploadRoutes'));
+app.use('/api/employer', require('./routes/employerRoutes'));
 app.use('/', require('./routes/sitemapRoutes')); // GET /sitemap.xml
 
 app.use(notFound);

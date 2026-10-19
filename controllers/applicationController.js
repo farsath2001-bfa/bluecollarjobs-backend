@@ -1,5 +1,7 @@
 const Application = require('../models/Application');
 const Job = require('../models/Job');
+const Company = require('../models/Company');
+const User = require('../models/User');
 const { asyncHandler, HttpError } = require('../utils/asyncHandler');
 const { sendLater, templates } = require('../utils/mailer');
 
@@ -8,7 +10,7 @@ const JOB_FIELDS = 'title companyName logo location salary jobType category isAc
 // POST /api/applications/:jobId  (alias: POST /api/jobs/:jobId/apply)
 const applyToJob = asyncHandler(async (req, res) => {
   const jobId = req.params.jobId || req.params.id;
-  if (req.user.role === 'admin') throw new HttpError(400, 'Admin accounts cannot apply for jobs');
+  if (req.user.role !== 'candidate') throw new HttpError(400, 'Only job seeker accounts can apply for jobs');
 
   const job = await Job.findById(jobId);
   if (!job || !job.isOpen) throw new HttpError(404, 'This job is no longer accepting applications');
@@ -47,6 +49,14 @@ const applyToJob = asyncHandler(async (req, res) => {
       ...templates.applicationReceivedAdmin({ applicant: req.user, job, application }),
     });
   }
+  // The employer who posted the job (employer accounts only)
+  if (job.company) {
+    const company = await Company.findById(job.company).select('owner');
+    const owner = company?.owner && (await User.findById(company.owner).select('email name'));
+    if (owner?.email) {
+      sendLater({ to: owner.email, replyTo: req.user.email, ...templates.applicationReceivedEmployer({ applicant: req.user, job, application }) });
+    }
+  }
 
   res.status(201).json({ message: 'Application sent', application });
 });
@@ -68,11 +78,17 @@ const withdrawApplication = asyncHandler(async (req, res) => {
   res.json({ message: 'Application withdrawn' });
 });
 
-// GET /api/applications?status=&job=   (admin)
+// Job ids an employer may see applications for
+const employerJobIds = (req) => Job.find({ company: req.company._id }).distinct('_id');
+
+// GET /api/applications?status=&job=   (admin: all; employer: applications to their jobs)
 const getAllApplications = asyncHandler(async (req, res) => {
   const filter = {};
   if (req.query.status) filter.status = req.query.status;
-  if (req.query.job) filter.job = req.query.job;
+  if (req.user.role === 'employer') {
+    const ids = (await employerJobIds(req)).map(String);
+    filter.job = req.query.job ? (ids.includes(String(req.query.job)) ? req.query.job : null) : { $in: ids };
+  } else if (req.query.job) filter.job = req.query.job;
   const applications = await Application.find(filter)
     .populate('job', JOB_FIELDS)
     .populate('applicant', 'name email phone location nationality skills experienceYears languages resume')
@@ -87,6 +103,10 @@ const updateApplicationStatus = asyncHandler(async (req, res) => {
 
   const application = await Application.findById(req.params.id);
   if (!application) throw new HttpError(404, 'Application not found');
+  if (req.user.role === 'employer') {
+    const ids = (await employerJobIds(req)).map(String);
+    if (!ids.includes(String(application.job))) throw new HttpError(404, 'Application not found');
+  }
   const statusChanged = status && status !== application.status;
   if (status) application.status = status;
   if (adminNote !== undefined) application.adminNote = adminNote;

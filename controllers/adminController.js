@@ -7,7 +7,7 @@ const { asyncHandler, HttpError } = require('../utils/asyncHandler');
 
 // GET /api/admin/stats
 const getStats = asyncHandler(async (req, res) => {
-  const [jobs, activeJobs, companies, applications, pending, users, unreadMessages, byStatus, recentApplications] = await Promise.all([
+  const [jobs, activeJobs, companies, applications, pending, users, unreadMessages, byStatus, recentApplications, pendingEmployers] = await Promise.all([
     Job.countDocuments(),
     Job.countDocuments({ isActive: true }),
     Company.countDocuments(),
@@ -21,6 +21,7 @@ const getStats = asyncHandler(async (req, res) => {
       .limit(6)
       .populate('job', 'title companyName')
       .populate('applicant', 'name phone'),
+    Company.countDocuments({ status: 'pending' }),
   ]);
 
   res.json({
@@ -31,6 +32,7 @@ const getStats = asyncHandler(async (req, res) => {
     pendingApplications: pending,
     users,
     unreadMessages,
+    pendingEmployers,
     applicationsByStatus: Object.fromEntries(byStatus.map((s) => [s._id, s.count])),
     recentApplications,
   });
