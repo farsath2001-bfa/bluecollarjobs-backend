@@ -34,7 +34,8 @@ const jobSchema = new mongoose.Schema(
     requirements: { type: [String], default: [] },
     benefits: { type: [String], default: [] }, // e.g. Accommodation, Transport, Visa
     vacancies: { type: Number, min: 1, default: 1 },
-    contactPhone: { type: String, default: '' },
+    contactPhone: { type: String, default: '' }, // WhatsApp/phone for applications (optional)
+    expiresAt: { type: Date, default: null }, // job closes automatically after this date
 
     applicantsCount: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
@@ -49,6 +50,18 @@ jobSchema.pre('save', function setSalaryMin() {
 
 jobSchema.index({ isActive: 1, createdAt: -1 });
 jobSchema.index({ category: 1 });
+
+// Query fragment: active and not past its closing date
+jobSchema.statics.openFilter = () => ({
+  isActive: true,
+  $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+});
+
+jobSchema.virtual('isOpen').get(function isOpen() {
+  return this.isActive && (!this.expiresAt || this.expiresAt > new Date());
+});
+jobSchema.set('toJSON', { virtuals: true });
+jobSchema.set('toObject', { virtuals: true });
 
 jobSchema.statics.JOB_TYPES = JOB_TYPES;
 jobSchema.statics.parseSalary = parseSalary;

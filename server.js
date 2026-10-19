@@ -1,4 +1,5 @@
 const express = require('express');
+const { HttpError } = require('./utils/asyncHandler');
 const cors = require('cors');
 const helmet = require('helmet');
 const dotenv = require('dotenv');
@@ -12,7 +13,7 @@ const app = express();
 app.set('trust proxy', 1); // Render / Vercel sit behind a proxy (needed for rate limiting)
 
 // ---- CORS: allow the frontends listed in CLIENT_URLS ----
-const allowedOrigins = (process.env.CLIENT_URLS || 'http://localhost:5173,https://bluecollarjobs-frontend.vercel.app')
+const allowedOrigins = (process.env.CLIENT_URLS || 'http://localhost:5173,http://localhost:4173,https://bluecollarjobs-frontend.vercel.app')
   .split(',')
   .map((s) => s.trim().replace(/\/$/, ''))
   .filter(Boolean);
@@ -24,7 +25,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin) || /^https:\/\/bluecollarjobs-frontend[\w-]*\.vercel\.app$/.test(origin)) {
         return cb(null, true);
       }
-      return cb(new Error(`Origin ${origin} is not allowed by CORS`));
+      return cb(new HttpError(403, `Origin ${origin} is not allowed by CORS`));
     },
     credentials: true,
   })
@@ -46,6 +47,8 @@ app.use('/api/applications', require('./routes/applicationRoutes'));
 app.use('/api/saved', require('./routes/savedJobRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/contact', require('./routes/contactRoutes'));
+app.use('/api/uploads', require('./routes/uploadRoutes'));
+app.use('/', require('./routes/sitemapRoutes')); // GET /sitemap.xml
 
 app.use(notFound);
 app.use(errorHandler);

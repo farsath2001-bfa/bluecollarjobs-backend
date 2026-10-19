@@ -30,7 +30,7 @@ const errorHandler = (err, req, res, next) => {
 
   res.status(status).json({
     message,
-    ...(process.env.NODE_ENV !== 'production' && status >= 500 ? { stack: err.stack } : {}),
+    ...(process.env.NODE_ENV !== 'production' && status === 500 ? { stack: err.stack } : {}),
   });
 };
 

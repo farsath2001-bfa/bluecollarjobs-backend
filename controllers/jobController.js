@@ -4,7 +4,7 @@ const { asyncHandler, HttpError, escapeRegex } = require('../utils/asyncHandler'
 
 const EDITABLE = [
   'title', 'description', 'category', 'location', 'company', 'companyName', 'logo', 'salary',
-  'jobType', 'requirements', 'benefits', 'vacancies', 'contactPhone', 'isActive',
+  'jobType', 'requirements', 'benefits', 'vacancies', 'contactPhone', 'isActive', 'expiresAt',
 ];
 
 const toList = (v) =>
@@ -17,6 +17,7 @@ const applyBody = async (job, body) => {
     job[f] = ['requirements', 'benefits'].includes(f) ? toList(body[f]) : body[f];
   });
   if (body.company === '') job.company = undefined;
+  if (body.expiresAt === '' || body.expiresAt === null) job.expiresAt = null;
 
   // If a company record is linked, keep the denormalised name/logo in sync
   if (job.company) {
@@ -28,11 +29,16 @@ const applyBody = async (job, body) => {
 };
 
 const buildFilter = (q, { includeInactive = false } = {}) => {
-  const filter = includeInactive ? {} : { isActive: true };
+  const filter = includeInactive ? {} : Job.openFilter();
   const keyword = q.keyword || q.search || q.q;
   if (keyword) {
     const rx = new RegExp(escapeRegex(keyword), 'i');
-    filter.$or = [{ title: rx }, { category: rx }, { companyName: rx }, { description: rx }];
+    const or = [{ title: rx }, { category: rx }, { companyName: rx }, { description: rx }];
+    // openFilter already uses $or for expiry, so combine both with $and
+    if (filter.$or) {
+      filter.$and = [{ $or: filter.$or }, { $or: or }];
+      delete filter.$or;
+    } else filter.$or = or;
   }
   if (q.location) filter.location = new RegExp(escapeRegex(q.location), 'i');
   if (q.category) filter.category = new RegExp(`^${escapeRegex(q.category)}$`, 'i');
@@ -71,9 +77,9 @@ const getAllJobs = asyncHandler(async (req, res) => {
 // GET /api/jobs/meta — counts used for category tiles & filter dropdowns
 const getJobMeta = asyncHandler(async (req, res) => {
   const [categories, locations, total, companies] = await Promise.all([
-    Job.aggregate([{ $match: { isActive: true } }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
-    Job.aggregate([{ $match: { isActive: true } }, { $group: { _id: '$location', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
-    Job.countDocuments({ isActive: true }),
+    Job.aggregate([{ $match: Job.openFilter() }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
+    Job.aggregate([{ $match: Job.openFilter() }, { $group: { _id: '$location', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
+    Job.countDocuments(Job.openFilter()),
     Company.countDocuments(),
   ]);
   res.json({
@@ -91,10 +97,10 @@ const getJobById = asyncHandler(async (req, res) => {
   if (!job || (!job.isActive && req.user?.role !== 'admin')) throw new HttpError(404, 'This job is no longer available');
 
   // A few similar openings for the details page
-  const similar = await Job.find({ _id: { $ne: job._id }, isActive: true, category: job.category })
+  const similar = await Job.find({ _id: { $ne: job._id }, ...Job.openFilter(), category: job.category })
     .sort({ createdAt: -1 })
     .limit(3)
-    .select('title companyName logo location salary jobType createdAt');
+    .select('title companyName logo location salary jobType createdAt benefits');
 
   res.json({ ...job.toObject(), similar });
 });

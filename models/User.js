@@ -35,8 +35,13 @@ const userSchema = new mongoose.Schema(
     experienceYears: { type: Number, min: 0, max: 60, default: 0 },
     languages: { type: [String], default: [] },
     bio: { type: String, maxlength: 600, default: '' },
-    resume: { type: String, default: '' }, // URL (Drive, Dropbox, Cloudinary…)
+    resume: { type: String, default: '' }, // URL (uploaded to Cloudinary, or a Drive/Dropbox link)
+    resumeName: { type: String, default: '' }, // original file name of an uploaded CV
     profilePhoto: { type: String, default: '' },
+
+    // Forgot-password flow: only a SHA-256 hash of the emailed token is stored
+    resetPasswordToken: { type: String, select: false },
+    resetPasswordExpires: { type: Date, select: false },
   },
   { timestamps: true }
 );
@@ -59,6 +64,8 @@ userSchema.methods.matchPassword = function matchPassword(entered) {
 userSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.password;
+    delete ret.resetPasswordToken;
+    delete ret.resetPasswordExpires;
     delete ret.__v;
     return ret;
   },

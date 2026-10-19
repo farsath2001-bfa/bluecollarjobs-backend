@@ -9,8 +9,8 @@ const pick = (body) =>
 
 // Open jobs for a company: linked by id, or (for older jobs) by name
 const jobMatch = (company) => ({
-  isActive: true,
-  $or: [{ company: company._id }, { companyName: new RegExp(`^${escapeRegex(company.name)}$`, 'i') }],
+  ...Job.openFilter(),
+  $and: [{ $or: [{ company: company._id }, { companyName: new RegExp(`^${escapeRegex(company.name)}$`, 'i') }] }],
 });
 
 // GET /api/companies?search=

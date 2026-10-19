@@ -1,6 +1,7 @@
 const Application = require('../models/Application');
 const Job = require('../models/Job');
 const { asyncHandler, HttpError } = require('../utils/asyncHandler');
+const { sendLater, templates } = require('../utils/mailer');
 
 const JOB_FIELDS = 'title companyName logo location salary jobType category isActive createdAt';
 
@@ -10,7 +11,7 @@ const applyToJob = asyncHandler(async (req, res) => {
   if (req.user.role === 'admin') throw new HttpError(400, 'Admin accounts cannot apply for jobs');
 
   const job = await Job.findById(jobId);
-  if (!job || !job.isActive) throw new HttpError(404, 'This job is no longer accepting applications');
+  if (!job || !job.isOpen) throw new HttpError(404, 'This job is no longer accepting applications');
 
   const already = await Application.findOne({ job: job._id, applicant: req.user._id });
   if (already) throw new HttpError(400, 'You have already applied for this job');
@@ -36,6 +37,17 @@ const applyToJob = asyncHandler(async (req, res) => {
   }
 
   await Job.updateOne({ _id: job._id }, { $inc: { applicantsCount: 1 } });
+
+  // Confirmation to the candidate + alert to the admin (never blocks the response)
+  sendLater({ to: req.user.email, ...templates.applicationReceivedCandidate({ name: req.user.name, job }) });
+  if (process.env.ADMIN_NOTIFY_EMAIL) {
+    sendLater({
+      to: process.env.ADMIN_NOTIFY_EMAIL,
+      replyTo: req.user.email,
+      ...templates.applicationReceivedAdmin({ applicant: req.user, job, application }),
+    });
+  }
+
   res.status(201).json({ message: 'Application sent', application });
 });
 
@@ -75,6 +87,7 @@ const updateApplicationStatus = asyncHandler(async (req, res) => {
 
   const application = await Application.findById(req.params.id);
   if (!application) throw new HttpError(404, 'Application not found');
+  const statusChanged = status && status !== application.status;
   if (status) application.status = status;
   if (adminNote !== undefined) application.adminNote = adminNote;
   await application.save();
@@ -83,6 +96,15 @@ const updateApplicationStatus = asyncHandler(async (req, res) => {
     { path: 'job', select: JOB_FIELDS },
     { path: 'applicant', select: 'name email phone location nationality skills experienceYears languages resume' },
   ]);
+
+  // Tell the candidate when their status changes (not for "pending")
+  if (statusChanged && status !== 'pending' && application.applicant?.email && application.job) {
+    sendLater({
+      to: application.applicant.email,
+      ...templates.statusChanged({ name: application.applicant.name, job: application.job, status }),
+    });
+  }
+
   res.json(application);
 });
 

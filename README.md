@@ -30,6 +30,18 @@ Public sign-up always creates a `candidate`. Admins are created with `npm run cr
 | `JWT_EXPIRE` | `7d` |
 | `CLIENT_URLS` | `http://localhost:5173,https://bluecollarjobs-frontend.vercel.app` |
 | `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | first admin account |
+| `FRONTEND_URL` | `https://bluecollarjobs-frontend.vercel.app` — used in email links and the sitemap |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | from Cloudinary → API Keys (or one `CLOUDINARY_URL`). Without them uploads are switched off and the site asks for CV links instead |
+| `CLOUDINARY_FOLDER` | `jobzdxb` |
+| `BREVO_API_KEY` | from Brevo → SMTP & API → API Keys. Without it emails are only logged |
+| `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME` | a sender verified in Brevo, e.g. your Gmail; `Jobz Dxb` |
+| `ADMIN_NOTIFY_EMAIL` | where new-application and contact-form alerts go |
+
+Emails go through Brevo's HTTPS API because Render's free plan blocks SMTP ports.
+
+### Keeping the free Render server awake
+
+Render's free plan sleeps after 15 minutes without traffic, so the first visitor waits ~50 seconds. Add a free monitor at [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org) that requests `https://jobzdxb-api.onrender.com/api/health` every 10 minutes.
 
 On Render, add the same variables under **Environment**.
 
@@ -49,6 +61,11 @@ On Render, add the same variables under **Environment**.
 | POST | `/api/auth/register`, `/api/auth/login` | public (rate limited) |
 | GET/PUT | `/api/auth/profile` | logged in |
 | PUT | `/api/auth/password` | logged in |
+| POST | `/api/auth/forgot-password`, `/api/auth/reset-password/:token` | public (rate limited) — reset links last 30 minutes |
+| GET | `/api/uploads/status` | public — `{ enabled }` |
+| POST | `/api/uploads/cv` (form field `file`: PDF/DOC/DOCX/JPG/PNG ≤ 5 MB) | logged in |
+| POST | `/api/uploads/logo` (form field `file`: image ≤ 2 MB) | admin |
+| GET | `/sitemap.xml` | public — open jobs and companies (the frontend proxies its own `/sitemap.xml` here) |
 | GET | `/api/jobs?keyword=&location=&category=&jobType=&minSalary=&sort=newest\|salary&page=&limit=` | public → `{ jobs, total, page, pages }` |
 | GET | `/api/jobs/meta` | public — category/location counts |
 | GET | `/api/jobs/:id` | public — includes `similar` jobs |
