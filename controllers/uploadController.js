@@ -1,6 +1,7 @@
 const multer = require('multer');
 const path = require('path');
-const { isConfigured, uploadBuffer } = require('../config/cloudinary');
+const { cloudinary, isConfigured, uploadBuffer } = require('../config/cloudinary');
+const Application = require('../models/Application');
 const { asyncHandler, HttpError } = require('../utils/asyncHandler');
 
 const MB = 1024 * 1024;
@@ -73,7 +74,44 @@ const uploadLogo = [
   }),
 ];
 
+// res.cloudinary.com/<cloud>/<image|raw|video>/upload/[transformations/][v123/]<public_id>[.ext]
+const parseCloudinaryUrl = (url) => {
+  const m = /^https?:\/\/res\.cloudinary\.com\/[^/]+\/(image|raw|video)\/upload\/(.+)$/.exec(url || '');
+  if (!m) return null;
+  const [, resourceType, rest] = m;
+  const parts = decodeURIComponent(rest.split('?')[0]).split('/');
+  const v = parts.findIndex((p) => /^v\d+$/.test(p));
+  const path = (v >= 0 ? parts.slice(v + 1) : parts).join('/');
+  if (resourceType === 'raw') return { resourceType, publicId: path, format: '' }; // raw ids keep their extension
+  const dot = path.lastIndexOf('.');
+  return dot > 0 ? { resourceType, publicId: path.slice(0, dot), format: path.slice(dot + 1) } : { resourceType, publicId: path, format: '' };
+};
+
+/**
+ * GET /api/uploads/link?url=<file url>  → { url }
+ * New Cloudinary accounts block direct links to PDFs and documents ("401"). This returns a short-lived signed
+ * download link that always works. Admins can open any CV; candidates only their own.
+ * Links that aren't Cloudinary uploads (e.g. Google Drive) are returned unchanged.
+ */
+const getFileLink = asyncHandler(async (req, res) => {
+  const url = String(req.query.url || '');
+  const parsed = parseCloudinaryUrl(url);
+  if (!parsed || !isConfigured()) return res.json({ url });
+
+  if (req.user.role !== 'admin') {
+    const own = req.user.resume === url || (await Application.exists({ applicant: req.user._id, resume: url }));
+    if (!own) throw new HttpError(403, "You can't open this file");
+  }
+
+  const signed = cloudinary.utils.private_download_url(parsed.publicId, parsed.format, {
+    resource_type: parsed.resourceType,
+    type: 'upload',
+    expires_at: Math.floor(Date.now() / 1000) + 10 * 60,
+  });
+  res.json({ url: signed });
+});
+
 // GET /api/uploads/status — lets the frontend hide upload buttons when Cloudinary isn't configured
 const uploadStatus = (req, res) => res.json({ enabled: isConfigured() });
 
-module.exports = { uploadCv, uploadLogo, uploadStatus };
+module.exports = { uploadCv, uploadLogo, uploadStatus, getFileLink, parseCloudinaryUrl };

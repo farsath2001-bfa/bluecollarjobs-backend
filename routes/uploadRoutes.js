@@ -1,6 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { uploadCv, uploadLogo, uploadStatus } = require('../controllers/uploadController');
+const { uploadCv, uploadLogo, uploadStatus, getFileLink } = require('../controllers/uploadController');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -13,6 +13,7 @@ const uploadLimiter = rateLimit({
 });
 
 router.get('/status', uploadStatus);                                     // GET  /api/uploads/status
+router.get('/link', protect, getFileLink);                               // GET  /api/uploads/link?url=
 router.post('/cv', protect, uploadLimiter, uploadCv);                    // POST /api/uploads/cv
 router.post('/logo', protect, adminOnly, uploadLimiter, uploadLogo);     // POST /api/uploads/logo
 
